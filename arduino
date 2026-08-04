@@ -1,0 +1,133 @@
+// ================= PIN TANIMLARI =================
+const int trigPin = A0;
+const int echoPin = A1;
+
+// MOTOR PINLERI
+const int sagileri  = 7;
+const int saggeri   = 6;
+const int solileri  = 5;
+const int solgeri   = 4;
+const int solenable = 3;
+const int sagenable = 9;
+
+// ================= HIZLAR =================
+int DonmeHizi = 100;                 // Gerekirse 150–200 yap
+int YavasHiz  = (DonmeHizi * 60) / 100;
+
+// ================= KOMUT =================
+char sonKomut = 'D';                 // I, R, G, L, D
+
+// ================= ULTRASONIK =================
+long mesafeOlcumu() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long sure = pulseIn(echoPin, HIGH);
+  if (sure == 0) return 400;
+  return (sure *0.0343) / 2;
+}
+
+// ================= MOTOR =================
+void dur() {
+  analogWrite(sagenable, 0);
+  analogWrite(solenable, 0);
+
+  digitalWrite(sagileri, LOW);
+  digitalWrite(saggeri, LOW);
+  digitalWrite(solileri, LOW);
+  digitalWrite(solgeri, LOW);
+}
+
+void ileri(int hiz) {
+  analogWrite(sagenable, hiz);
+  analogWrite(solenable, hiz);
+
+  digitalWrite(sagileri, HIGH);
+  digitalWrite(saggeri, LOW);
+  digitalWrite(solileri, HIGH);
+  digitalWrite(solgeri, LOW);
+}
+
+void geri(int hiz) {
+  analogWrite(sagenable, hiz);
+  analogWrite(solenable, hiz);
+
+  digitalWrite(sagileri, LOW);
+  digitalWrite(saggeri, HIGH);
+  digitalWrite(solileri, LOW);
+  digitalWrite(solgeri, HIGH);
+}
+
+void sagaYay() {
+  analogWrite(sagenable, YavasHiz);
+  analogWrite(solenable, DonmeHizi);
+
+  digitalWrite(sagileri, HIGH);
+  digitalWrite(saggeri, LOW);
+  digitalWrite(solileri, HIGH);
+  digitalWrite(solgeri, LOW);
+}
+
+void solaYay() {
+  analogWrite(sagenable, DonmeHizi);
+  analogWrite(solenable, YavasHiz);
+
+  digitalWrite(sagileri, HIGH);
+  digitalWrite(saggeri, LOW);
+  digitalWrite(solileri, HIGH);
+  digitalWrite(solgeri, LOW);
+}
+
+// ================= SETUP =================
+void setup() {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  pinMode(sagileri, OUTPUT);
+  pinMode(saggeri, OUTPUT);
+  pinMode(solileri, OUTPUT);
+  pinMode(solgeri, OUTPUT);
+  pinMode(sagenable, OUTPUT);
+  pinMode(solenable, OUTPUT);
+
+  Serial.begin(9600);        // HC-05 & Python
+  dur();
+
+  Serial.println("READY");
+}
+
+// ================= LOOP =================
+void loop() {
+  long uzaklik = mesafeOlcumu();
+   Serial.println(uzaklik);
+  // ===== KOMUT OKUMA =====
+  if (Serial.available()) {
+    char k = Serial.read();
+
+    // Tüm komutlar kalıcı
+    if (k == 'I' || k == 'R' || k == 'G' || k == 'L' || k == 'D') {
+      sonKomut = k;
+    }
+  }
+
+  // ===== HAREKET KARARI =====
+  if (sonKomut == 'I') {
+    if (uzaklik > 30) ileri(DonmeHizi);
+    else dur();                
+  }
+  else if (sonKomut == 'R') {
+    geri(DonmeHizi);
+  }
+  else if (sonKomut == 'G') {
+    sagaYay();                 
+  }
+  else if (sonKomut == 'L') {
+    solaYay();                  
+  }
+  else {
+    dur();
+  }
+}
