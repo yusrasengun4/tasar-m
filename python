@@ -1,0 +1,163 @@
+import cv2
+import mediapipe as mp
+import pygame
+import time
+import random
+
+# --- MediaPipe Ayarları ---
+mpHands = mp.solutions.hands
+hands = mpHands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.5)
+mpDraw = mp.solutions.drawing_utils
+tipIds = [4, 8, 12, 16, 20]
+
+# --- Pygame Başlat ---
+pygame.init()
+WIDTH, HEIGHT = 800, 600
+win = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("🖐️ El Kontrollü Otonom Araç Simülasyonu")
+
+font = pygame.font.SysFont("Arial", 24)
+clock = pygame.time.Clock()
+
+# --- Araç Bilgileri ---
+car = pygame.Rect(WIDTH//2 - 25, HEIGHT - 100, 50, 80)
+lane_left = WIDTH//3
+lane_right = 2*WIDTH//3
+speed = 0
+direction = 0
+command = "HAZIR"
+
+# --- Engel Listesi ---
+obstacles = []
+for i in range(5):
+    obstacles.append(pygame.Rect(random.randint(lane_left+20, lane_right-70),
+                                 random.randint(-600, -100),
+                                 60, 40))
+
+# --- Kamera Başlat ---
+cap = cv2.VideoCapture(0)
+
+def detect_fingers(img):
+    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    results = hands.process(imgRGB)
+    lmList = []
+    if results.multi_hand_landmarks:
+        for handLms in results.multi_hand_landmarks:
+            mpDraw.draw_landmarks(img, handLms, mpHands.HAND_CONNECTIONS)
+            for id, lm in enumerate(handLms.landmark):
+                h, w, _ = img.shape
+                cx, cy = int(lm.x * w), int(lm.y * h)
+                lmList.append([id, cx, cy])
+
+        if len(lmList) != 0:
+            fingers = []
+            for id in range(5):
+                if id == 0:
+                    fingers.append(1 if lmList[tipIds[0]][1] > lmList[tipIds[0] - 1][1] else 0)
+                else:
+                    fingers.append(1 if lmList[tipIds[id]][2] < lmList[tipIds[id] - 2][2] else 0)
+            return fingers
+    return None
+
+def get_command(fingers):
+    open_count = sum(fingers)
+
+    # 🖐️ 5 parmak açık -> DUR
+    if open_count == 5:
+        return "DUR"
+
+    # ✊ Yumruk -> İLERLE
+    elif open_count == 0:
+        return "İLERLE"
+
+    # ☝️ İşaret parmağı açık -> SAĞA
+    elif fingers[1] == 1 and sum(fingers) == 1:
+        return "SAĞA"
+
+    # ✌️ İşaret + orta parmak -> SOLA
+    elif fingers[1] == 1 and fingers[2] == 1 and sum(fingers) == 2:
+        return "SOLA"
+
+    return "BEKLE"
+
+running = True
+last_command_time = time.time()
+command_delay = 0.3
+
+# --- Ana Döngü ---
+while running:
+    success, img = cap.read()
+    img = cv2.flip(img, 1)
+
+    # El Algılama
+    fingers = detect_fingers(img)
+    if fingers:
+        current_time = time.time()
+        if current_time - last_command_time > command_delay:
+            new_command = get_command(fingers)
+            if new_command != "BEKLE":
+                command = new_command
+                last_command_time = current_time
+                print("Komut:", command)
+
+    # --- Pygame Simülasyon Alanı ---
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    win.fill((30, 30, 30))
+
+    # Yol Çizimi
+    pygame.draw.rect(win, (60, 60, 60), (lane_left, 0, lane_right-lane_left, HEIGHT))
+    pygame.draw.line(win, (255, 255, 255), (WIDTH//2, 0), (WIDTH//2, HEIGHT), 4)
+
+    # Komutlara Göre Hareket
+    if command == "İLERLE":
+        speed = min(speed + 0.2, 10)
+    elif command == "DUR":
+        speed = max(speed - 0.5, 0)
+    elif command == "SAĞA":
+        car.x += 8
+    elif command == "SOLA":
+        car.x -= 8
+
+    car.x = max(lane_left + 10, min(car.x, lane_right - car.width - 10))
+    car.y -= int(speed)
+    if car.y < HEIGHT - 100:
+        car.y = HEIGHT - 100
+
+    # Engel Güncelle
+    for obs in obstacles:
+        obs.y += 5
+        if obs.y > HEIGHT:
+            obs.y = random.randint(-600, -100)
+            obs.x = random.randint(lane_left+20, lane_right-70)
+
+        # Çarpışma kontrolü
+        if car.colliderect(obs):
+            command = "DUR"
+            speed = 0
+
+        pygame.draw.rect(win, (200, 50, 50), obs)
+
+    # Aracı çiz
+    pygame.draw.rect(win, (0, 200, 0), car)
+
+    # Bilgi Paneli
+    text = font.render(f"Komut: {command}", True, (255, 255, 255))
+    speed_text = font.render(f"Hız: {speed:.1f}", True, (255, 255, 255))
+    win.blit(text, (20, 20))
+    win.blit(speed_text, (20, 50))
+
+    pygame.display.update()
+    clock.tick(30)
+
+    # Görüntü göster
+    cv2.imshow("El Takibi", img)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+pygame.quit()
+
